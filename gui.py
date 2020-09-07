@@ -4,7 +4,7 @@ import tkinter.font as tkFont
 from PIL import Image, ImageTk, ImageOps, ImageDraw, ImageFont, ImageGrab, ImageEnhance
 from sys import exit
 from datetime import *
-from main import getCourseData
+from scraper import *
 
 import time
 import pickle
@@ -18,7 +18,7 @@ fontStyle = tkFont.Font(family="Century Gothic", size=15)
 
 frame = Frame(root)
 frame.pack()
-
+session = rweb_session()
 
 def focus_in(event):
     if event.widget.cget('fg') == 'grey':
@@ -40,36 +40,51 @@ def focus_out(event, default):
 
 
 """ Get term of classes """
-default_term_text = 'Fall 2020'
+default_term_text = session.term_codes[0]['description']
 Label(frame, text="Course Term\n(Leave blank\nfor latest)", font=fontStyle).grid(row=1, padx=(10, 10))
-termin = Entry(frame, width=10, font=fontStyle, fg='grey')
-termin.insert(END, default_term_text)
-termin.grid(row=1, column=1, sticky='ew', padx=(10, 10))
-termin.bind("<FocusIn>", focus_in)
-termin.bind("<FocusOut>", lambda event: focus_out(event, default_term_text))
+term_input = Entry(frame, width=10, font=fontStyle, fg='grey')
+term_input.insert(END, default_term_text)
+term_input.grid(row=1, column=1, sticky='ew', padx=(10, 10))
+term_input.bind("<FocusIn>", focus_in)
+term_input.bind("<FocusOut>", lambda event: focus_out(event, default_term_text))
 
 """ Get list of courses to scrape """
 # default_course_text = 'AHS007\nPHYS040A\nHIST010\nECON002\nCS010A'
-default_course_text = 'PHYS040A\nHIST010\nECON002\nCS010'
+default_course_text = 'PHYS040A\nHIST010\nECON002\nCS010A'
 Label(frame, text="Course Codes\n(One per line)", font=fontStyle).grid(row=3, padx=(10, 10))
-coursesin = Text(frame, width=10, height=5, font=fontStyle, fg='grey')
-coursesin.insert(END, default_course_text)
-coursesin.grid(row=3, column=1, sticky="nsew", padx=(10, 10))
-coursesin.bind("<FocusIn>", focus_in)
-coursesin.bind("<FocusOut>", lambda event: focus_out(event, default_course_text))
+course_input = Text(frame, width=10, height=5, font=fontStyle, fg='grey')
+course_input.insert(END, default_course_text)
+course_input.grid(row=3, column=1, sticky="nsew", padx=(10, 10))
+course_input.bind("<FocusIn>", focus_in)
+course_input.bind("<FocusOut>", lambda event: focus_out(event, default_course_text))
 
 
+courses = []
 def submitCmd():
-    global ret
-    x = termin.get()
-    if termin.cget('fg') == 'grey':
-        x = ''
-    y = coursesin.get('1.0', END).split()
-    # if coursesin.cget('fg') == 'grey':
-    # y = []
-    ret = (x, y)
-    frame.destroy()
-    root.destroy()
+    if session.init_term(term_input.get()):
+        for tempc in course_input.get('1.0', END).split():
+            if not session.is_valid_course(tempc):
+                messagebox.showwarning(title='Course not found', message=f'Error! Invalid course: {tempc}\nDid you mean: \n'
+                                                                         f'{[code for code in session.course_codes if tempc.upper() in code]}?')
+                break
+        else:
+            global courses
+            courses = course_input.get('1.0', END).split()
+            frame.destroy()
+            root.destroy()
+            return
+    else:
+        print(f'Error! Invalid term: {term_input.get()}')
+    # global ret
+    # x = term_input.get()
+    # if term_input.cget('fg') == 'grey':
+    #     x = ''
+    # y = course_input.get('1.0', END).split()
+    # # if course_input.cget('fg') == 'grey':
+    # # y = []
+    # ret = (x, y)
+    # frame.destroy()
+    # root.destroy()
 
 
 submit = Button(frame, text='Button', font=fontStyle, command=submitCmd)
@@ -175,8 +190,8 @@ class myButton:
         self.days = days
         self.ctime = ctime
         self.data = data
-        self.type = self.data[5].split()[-1]
-        self.code = self.data[1] + self.data[3]
+        self.type = self.data[10        ]#[5].split()[-1]
+        self.code = self.data[6] + self.data[5]     #self.data[1] + self.data[3]
 
     def create_rectangle(self, x1, y1, x2, y2, **kwargs):
         self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
@@ -254,6 +269,55 @@ invalid_courses, futures = [], []
 #     futures = [(param, executor.submit(getCourseData, ret[0], param)) for param in ret[1]]
 # for course, tempdata in [(f[0], f[1].result()) for f in futures]:
 
+with concurrent.futures.ThreadPoolExecutor() as executor:
+    futures = [(course, session.get_course_data(course)) for course in courses]
+
+for course, coursedata in futures:
+    c = Canvas(notebook, width=width, height=height, bd=0, highlightthickness=0, relief='ridge')
+    c.focus_set()
+    c.pack(fill=BOTH, expand=True)
+    c.create_image(0, 0, image=background_image, anchor="nw", tags='bg')
+    tabs.append(c)
+    notebook.add(tabs[-1], text=course)
+
+    for section in coursedata:  # for each section
+        siblings = []
+        days = [day for day in weekdays if section['meetingsFaculty'][0]['meetingTime'][day.lower()]]
+        for day in days:
+            format = '%H%M'
+            top = datetime.strptime('0700', format)
+            start = datetime.strptime(section['meetingsFaculty'][0]['meetingTime']['beginTime'], format)
+            end = datetime.strptime(section['meetingsFaculty'][0]['meetingTime']['endTime'], format)
+            length = (end - start).seconds / 60
+
+            adjh = int(length / 60 * (cellh * 2))  # adjusted pixel height
+            x1 = originx + weekdays.index(day) * cellw
+            y1 = originy + int((start - top).seconds / 1800) * cellh
+            x2 = originx + weekdays.index(day) * cellw + cellw
+            y2 = originy + int((start - top).seconds / 1800) * cellh + adjh
+            data = []
+            for i, key in enumerate(section):
+                if i > 15:
+                    break
+                data.append(section[key])
+            buttons.append(myButton(days, 'temp', data))
+            siblings.append(buttons[-1])
+
+            typecolor = 'black'
+            courseType = section['scheduleTypeDescription']
+            if 'Lecture' in courseType:
+                typecolor = 'Red'
+            elif 'Discussion' in courseType:
+                typecolor = 'Blue'
+            elif 'Laboratory' in courseType or 'Studio' in courseType:
+                typecolor = 'Yellow'
+            buttons[-1].create_rectangle(x1, y1, x2, y2, fill=typecolor, alpha=.8)
+
+        for b in siblings:
+            b.siblings = siblings
+
+
+"""
 coursecopy = ret[1][:]
 for course in ret[1]:
     if len(course) < 3:
@@ -277,6 +341,7 @@ for course, futuredata in futures2:
     except Exception as e:
         invalid_courses.append(e)
         continue
+"""
 
 # """
 # for course in ret[1]:
@@ -295,6 +360,7 @@ for course, futuredata in futures2:
 #             invalid_courses.append(e)
 #             continue
 # """
+"""
 for course, tempdata in futures:
     c = Canvas(notebook, width=width, height=height, bd=0, highlightthickness=0, relief='ridge')
     c.focus_set()
@@ -302,6 +368,8 @@ for course, tempdata in futures:
     c.create_image(0, 0, image=background_image, anchor="nw", tags='bg')
     tabs.append(c)
     notebook.add(tabs[-1], text=course)
+
+
 
     for days, ctime, data, term in tempdata:  # for each section
         global gterm
@@ -337,10 +405,11 @@ for course, tempdata in futures:
             b.siblings = siblings
         # print(days, len(siblings))
 
-if invalid_courses:
-    error_msg = ''
-    for error in invalid_courses:
-        error_msg += str(error) + '\n'
-    messagebox.showwarning(title='Course not found', message=error_msg)
+# if invalid_courses:
+#     error_msg = ''
+#     for error in invalid_courses:
+#         error_msg += str(error) + '\n'
+#     messagebox.showwarning(title='Course not found', message=error_msg)
+"""
 
 root.mainloop()
