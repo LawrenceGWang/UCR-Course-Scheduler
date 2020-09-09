@@ -5,21 +5,15 @@ import sys
 
 class rweb_session:
     def __init__(self):
-        terms_url = 'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/classSearch/getTerms?dataType=json&searchTerm=&offset=1&max=9999'
+        terms_url = 'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/classSearch/getTerms?dataType=json&searchTerm=&offset=1&max=5'
         self.term_codes = requests.get(terms_url).json()
+        self.rev_dict = {d['description']: d['code'] for d in self.term_codes}
+        print(self.rev_dict)
 
     def init_term(self, _term):
-        if not _term:
-            self.term_code = self.term_codes[0]['code']
-        for t in self.term_codes:
-            if _term in t['description']:
-                self.term_code = t['code']
-                class_url = f'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/courseSearch/get_subjectcoursecombo?dataType=json&searchTerm=&term={self.term_code}&offset=1&max=9999'
-                self.course_codes = [c['code'] for c in requests.get(class_url).json()]
-                return True
-                break
-        else:
-            return False
+        self.term_code = self.rev_dict[_term]
+        class_url = f'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/courseSearch/get_subjectcoursecombo?dataType=json&searchTerm=&term={self.term_code}&offset=1&max=9999'
+        self.course_codes = [c['code'] for c in requests.get(class_url).json()]
 
     def is_valid_course(self, course):
         return course.upper() in self.course_codes
@@ -27,7 +21,7 @@ class rweb_session:
     def get_course_data(self, course):
         s = requests.Session()
         s.get(
-            'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/term/search?mode=search&dataType=json&term=202040&studyPath=&studyPathText=&startDatepicker=&endDatepicker=')
+            f'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/term/search?mode=search&dataType=json&term={self.term_code}&studyPath=&studyPathText=&startDatepicker=&endDatepicker=')
         jsonurl = f'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/searchResults/searchResults?txt_subjectcoursecombo={course}&txt_term={self.term_code}&startDatepicker=&endDatepicker=&pageOffset=0&pageMaxSize=999&sortColumn=subjectDescription&sortDirection=asc&[object%20Object]'
         parsed_json = s.get(jsonurl).json()
         class_data = [row for row in parsed_json['data'] if row['seatsAvailable']]

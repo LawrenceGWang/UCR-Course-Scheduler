@@ -47,23 +47,29 @@ class get_term_courses:
         """ Get term of classes """
         default_term_text = session.term_codes[0]['description']
         Label(self.frame, text="Course Term\n(Leave blank\nfor latest)", font=fontStyle).grid(row=1, padx=(10, 10))
-        self.term_input = Entry(self.frame, width=10, font=fontStyle, fg='grey')
-        self.term_input.insert(END, default_term_text)
-        self.term_input.grid(row=1, column=1, sticky='ew', padx=(10, 10))
-        self.term_input.bind("<FocusIn>", self.focus_in)
-        self.term_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_term_text))
+        # self.term_input = Entry(self.frame, width=10, font=fontStyle, fg='grey')
+        # self.term_input.insert(END, default_term_text)
+        # self.term_input.grid(row=1, column=1, sticky='ew', padx=(10, 10))
+        # self.term_input.bind("<FocusIn>", self.focus_in)
+        # self.term_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_term_text))
+        options = [key for key in session.rev_dict]
+        self.term_input = StringVar(root)
+        self.term_input.set(options[0])
+        term_dropdown = OptionMenu(self.frame, self.term_input, *options)
+        term_dropdown.config(width=20)
+        term_dropdown.grid(row=1, column=1, sticky='ew')
 
         """ Get list of courses to scrape """
         default_course_text = 'AHS007\nPHYS040A\nHIST010\nECON002\nCS010A'
-        Label(self.frame, text="Course Codes\n(One per line)", font=fontStyle).grid(row=3, padx=(10, 10))
+        Label(self.frame, text="Course Codes\n(One per line)", font=fontStyle).grid(row=3)
         self.course_input = Text(self.frame, width=10, height=5, font=fontStyle, fg='grey')
         self.course_input.insert(END, default_course_text)
-        self.course_input.grid(row=3, column=1, sticky="nsew", padx=(10, 10))
+        self.course_input.grid(row=3, column=1, sticky="nsew")
         self.course_input.bind("<FocusIn>", self.focus_in)
         self.course_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_course_text))
 
         submit = Button(self.frame, text='Button', font=fontStyle, command=self.submitCmd)
-        submit.grid(row=5, column=0, rowspan=2, columnspan=2, sticky='nsew', padx=(10, 10))
+        submit.grid(row=5, column=0, rowspan=2, columnspan=2, sticky='nsew')
 
         col_count, row_count = self.frame.grid_size()
         for col in range(col_count):
@@ -90,20 +96,18 @@ class get_term_courses:
             event.widget.insert(END, default)
 
     def submitCmd(self):
-        if session.init_term(self.term_input.get()):
-            for tempc in self.course_input.get('1.0', END).split():
-                if not session.is_valid_course(tempc):
-                    messagebox.showwarning(title='Course not found',
-                                           message=f'Error! Invalid course: {tempc}\nDid you mean: \n'
-                                                   f'{[code for code in session.course_codes if tempc.upper() in code]}?')
-                    break
-            else:
-                global courses
-                courses = self.course_input.get('1.0', END).split()
-                self.master.destroy()
-                return
+        session.init_term(self.term_input.get())
+        for tempc in self.course_input.get('1.0', END).split():
+            if not session.is_valid_course(tempc):
+                messagebox.showwarning(title='Course not found',
+                                       message=f'Error! Invalid course: {tempc}\nDid you mean: \n'
+                                               f'{[code for code in session.course_codes if tempc.upper() in code]}?')
+                break
         else:
-            print(f'Error! Invalid term: {self.term_input.get()}')
+            global courses
+            courses = self.course_input.get('1.0', END).split()
+            self.master.destroy()
+            return
 
 
 popup = get_term_courses()
