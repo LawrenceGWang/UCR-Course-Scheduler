@@ -1,105 +1,11 @@
 from tkinter import *
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog, filedialog
 import tkinter.font as tkFont
-from PIL import Image, ImageTk, ImageOps, ImageDraw, ImageFont, ImageGrab, ImageEnhance
-from sys import exit
+from PIL import Image, ImageTk, ImageOps, ImageDraw, ImageFont
 from datetime import *
 from scraper import *
-
-import time
 import pickle
 import concurrent.futures
-
-root = Tk()
-root.title('Input Term and Courses')
-root.geometry("390x335")
-root.resizable(False, False)
-fontStyle = tkFont.Font(family="Century Gothic", size=15)
-
-frame = Frame(root)
-frame.pack()
-session = rweb_session()
-
-def focus_in(event):
-    if event.widget.cget('fg') == 'grey':
-        try:
-            event.widget.delete(0, END)
-        except:
-            event.widget.delete('1.0', END)
-        event.widget.config(fg='black')
-
-
-def focus_out(event, default):
-    try:
-        text = event.widget.get("1.0", "end-1c")
-    except:
-        text = event.widget.get()
-    if not text:
-        event.widget.config(fg='grey')
-        event.widget.insert(END, default)
-
-
-""" Get term of classes """
-default_term_text = session.term_codes[0]['description']
-Label(frame, text="Course Term\n(Leave blank\nfor latest)", font=fontStyle).grid(row=1, padx=(10, 10))
-term_input = Entry(frame, width=10, font=fontStyle, fg='grey')
-term_input.insert(END, default_term_text)
-term_input.grid(row=1, column=1, sticky='ew', padx=(10, 10))
-term_input.bind("<FocusIn>", focus_in)
-term_input.bind("<FocusOut>", lambda event: focus_out(event, default_term_text))
-
-""" Get list of courses to scrape """
-# default_course_text = 'AHS007\nPHYS040A\nHIST010\nECON002\nCS010A'
-default_course_text = 'PHYS040A\nHIST010\nECON002\nCS010A'
-Label(frame, text="Course Codes\n(One per line)", font=fontStyle).grid(row=3, padx=(10, 10))
-course_input = Text(frame, width=10, height=5, font=fontStyle, fg='grey')
-course_input.insert(END, default_course_text)
-course_input.grid(row=3, column=1, sticky="nsew", padx=(10, 10))
-course_input.bind("<FocusIn>", focus_in)
-course_input.bind("<FocusOut>", lambda event: focus_out(event, default_course_text))
-
-
-courses = []
-def submitCmd():
-    if session.init_term(term_input.get()):
-        for tempc in course_input.get('1.0', END).split():
-            if not session.is_valid_course(tempc):
-                messagebox.showwarning(title='Course not found', message=f'Error! Invalid course: {tempc}\nDid you mean: \n'
-                                                                         f'{[code for code in session.course_codes if tempc.upper() in code]}?')
-                break
-        else:
-            global courses
-            courses = course_input.get('1.0', END).split()
-            frame.destroy()
-            root.destroy()
-            return
-    else:
-        print(f'Error! Invalid term: {term_input.get()}')
-    # global ret
-    # x = term_input.get()
-    # if term_input.cget('fg') == 'grey':
-    #     x = ''
-    # y = course_input.get('1.0', END).split()
-    # # if course_input.cget('fg') == 'grey':
-    # # y = []
-    # ret = (x, y)
-    # frame.destroy()
-    # root.destroy()
-
-
-submit = Button(frame, text='Button', font=fontStyle, command=submitCmd)
-submit.grid(row=5, column=0, rowspan=2, columnspan=2, sticky='nsew', padx=(10, 10))
-
-col_count, row_count = frame.grid_size()
-for col in range(col_count):
-    frame.grid_columnconfigure(col, minsize=10)
-for row in range(row_count):
-    frame.grid_rowconfigure(row, minsize=30)
-frame.grid_rowconfigure(0, minsize=10)
-
-root.mainloop()
-
-
 
 root = Tk()
 root.title('Course Scheduler')
@@ -108,27 +14,125 @@ posHor = int(root.winfo_screenwidth() / 2 - width / 2)
 posVert = int(root.winfo_screenheight() / 2 - height / 2)
 root.geometry(f"{width}x{height}+{posHor}+{posVert - 50}")
 root.resizable(False, False)
+root.withdraw()
 
+background_image = PhotoImage(file='./blank_schedule.png')
 notebook = ttk.Notebook(root)
 notebook.pack()
+finaltab = Canvas(notebook, width=width, height=height, bd=0, highlightthickness=0, relief='ridge')
+finaltab.pack(fill=BOTH, expand=True)
+finaltab.create_image(0, 0, image=background_image, anchor="nw", tags='bg')
+notebook.add(finaltab, text='Final')
+final = []
+fimage = Image.open('./blank_schedule.png')
+fdraw = ImageDraw.Draw(fimage, 'RGBA')
+fimagetemp = None
 
-tabs = []
-buttons = []
+
+session = rweb_session()
+courses, tabs, buttons = [], [], []
 
 
-def keyCall(event):
-    if event.char == 's':
-        pick = {'Term': gterm}
+class get_term_courses:
+    def __init__(self):
+        self.master = Toplevel(root)
+        self.master.title('Input Term and Courses')
+        self.master.geometry("390x335")
+        self.master.resizable(False, False)
+
+        fontStyle = tkFont.Font(family="Century Gothic", size=15)
+        self.frame = Frame(self.master)
+        self.frame.pack()
+
+        """ Get term of classes """
+        default_term_text = session.term_codes[0]['description']
+        Label(self.frame, text="Course Term\n(Leave blank\nfor latest)", font=fontStyle).grid(row=1, padx=(10, 10))
+        self.term_input = Entry(self.frame, width=10, font=fontStyle, fg='grey')
+        self.term_input.insert(END, default_term_text)
+        self.term_input.grid(row=1, column=1, sticky='ew', padx=(10, 10))
+        self.term_input.bind("<FocusIn>", self.focus_in)
+        self.term_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_term_text))
+
+        """ Get list of courses to scrape """
+        default_course_text = 'AHS007\nPHYS040A\nHIST010\nECON002\nCS010A'
+        Label(self.frame, text="Course Codes\n(One per line)", font=fontStyle).grid(row=3, padx=(10, 10))
+        self.course_input = Text(self.frame, width=10, height=5, font=fontStyle, fg='grey')
+        self.course_input.insert(END, default_course_text)
+        self.course_input.grid(row=3, column=1, sticky="nsew", padx=(10, 10))
+        self.course_input.bind("<FocusIn>", self.focus_in)
+        self.course_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_course_text))
+
+        submit = Button(self.frame, text='Button', font=fontStyle, command=self.submitCmd)
+        submit.grid(row=5, column=0, rowspan=2, columnspan=2, sticky='nsew', padx=(10, 10))
+
+        col_count, row_count = self.frame.grid_size()
+        for col in range(col_count):
+            self.frame.grid_columnconfigure(col, minsize=10)
+        for row in range(row_count):
+            self.frame.grid_rowconfigure(row, minsize=30)
+        self.frame.grid_rowconfigure(0, minsize=10)
+
+    def focus_in(self, event):
+        if event.widget.cget('fg') == 'grey':
+            try:
+                event.widget.delete(0, END)
+            except:
+                event.widget.delete('1.0', END)
+            event.widget.config(fg='black')
+
+    def focus_out(self, event, default):
+        try:
+            text = event.widget.get("1.0", "end-1c")
+        except:
+            text = event.widget.get()
+        if not text:
+            event.widget.config(fg='grey')
+            event.widget.insert(END, default)
+
+    def submitCmd(self):
+        if session.init_term(self.term_input.get()):
+            for tempc in self.course_input.get('1.0', END).split():
+                if not session.is_valid_course(tempc):
+                    messagebox.showwarning(title='Course not found',
+                                           message=f'Error! Invalid course: {tempc}\nDid you mean: \n'
+                                                   f'{[code for code in session.course_codes if tempc.upper() in code]}?')
+                    break
+            else:
+                global courses
+                courses = self.course_input.get('1.0', END).split()
+                self.master.destroy()
+                return
+        else:
+            print(f'Error! Invalid term: {self.term_input.get()}')
+
+
+popup = get_term_courses()
+root.wait_window(popup.master)
+
+
+show_final = False
+def toggle_show_final():
+    for tab in tabs:
+        if show_final:
+            for fbutton in final:
+                tab.create_image(int(fbutton.x1), int(fbutton.y1), image=fbutton.image, anchor='nw', tags='temp')
+        else:
+            tab.delete(tab.gettags('temp'))
+
+
+def key_press(event):
+    if event.char == 's' and final:
+        pick = {'Term': final[0].data['term']}
         for f in final:
-            pick.update({f.data[1] + f.data[3]: []})
+            pick.update({f.code: []})
         for f in final:
-            pick.update({f.data[1] + f.data[3]: pick[f.data[1] + f.data[3]] + [f.data[0]]})
-        pickle.dump(pick, open(f"./pickles/final.p", "wb"))
-        print('Saved!')
+            pick.update({f.code: pick[f.code] + [f.data['courseReferenceNumber']]})
+        pickle.dump(pick, open(filedialog.asksaveasfilename(initialdir="./schedules/", title="Save schedule", filetypes=(("all files", "*.*"),)), "wb"))
+        messagebox.showinfo(title='Schedule saved!', message='Schedule saved!')
     elif event.char == 'u':
-        global normal_bg
-        normal_bg = not normal_bg
-        toggle_bg()
+        global show_final
+        show_final = not show_final
+        toggle_show_final()
     elif event.char == 'r':
         for b in final:
             finaltab.delete(b.fbutton)
@@ -152,46 +156,19 @@ def keyCall(event):
                 b.toggle()
 
 
-root.bind_all('<Key>', lambda event: keyCall(event))
-
-background_image = PhotoImage(file='./blank_schedule.png')
-
-finaltab = Canvas(notebook, width=width, height=height, bd=0, highlightthickness=0, relief='ridge')
-finaltab.pack(fill=BOTH, expand=True)
-finaltab.create_image(0, 0, image=background_image, anchor="nw", tags='bg')
-notebook.add(finaltab, text='Final')
-final = []
-fimage = Image.open('./blank_schedule.png')
-fdraw = ImageDraw.Draw(fimage, 'RGBA')
-fimagetemp = None
-normal_bg = True
-def toggle_bg():
-    global fimage, fdraw, fimagetemp, normal_bg
-    fimage = Image.open('./blank_schedule.png')
-    if normal_bg:
-        fdraw = ImageDraw.Draw(fimage, 'RGBA')
-        for fbutton in final:
-            x, y = fbutton.tab.coords(fbutton.cbutton)
-            fimage.paste(fbutton.pilimage, (int(x), int(y)), fbutton.pilimage)
-    fimagetemp = ImageTk.PhotoImage(fimage)
-    for tab in tabs:
-        tab.delete(tab.gettags('bg')[0])
-        tab.create_image(0, 0, image=fimagetemp, anchor="nw", tags='bg')
-        tab.tag_lower(tab.gettags('bg')[0])
+root.bind_all('<Key>', lambda event: key_press(event))
 
 
-class myButton:
+class course_button:
     cbutton = None
     fbutton = None
     state = 'normal'
     siblings = []
 
-    def __init__(self, days, ctime, data):
-        self.days = days
-        self.ctime = ctime
+    def __init__(self, data):
         self.data = data
-        self.type = self.data[10        ]#[5].split()[-1]
-        self.code = self.data[6] + self.data[5]     #self.data[1] + self.data[3]
+        self.type = data['scheduleTypeDescription']
+        self.code = data['subject'] + data['courseNumber']
 
     def create_rectangle(self, x1, y1, x2, y2, **kwargs):
         self.x1, self.y1, self.x2, self.y2 = x1, y1, x2, y2
@@ -202,14 +179,11 @@ class myButton:
             self.fill = root.winfo_rgb(self.fill) + (alpha,)
             image = Image.new('RGBA', (x2 - x1 - 2, y2 - y1 - 2), self.fill)
             image = ImageOps.expand(image, border=2, fill='black')
-            self.pilimage = Image.new('RGBA', (x2 - x1 - 10, y2 - y1 - 10), (0, 0, 255, 128))
-            self.pilimage = ImageOps.expand(self.pilimage, border=5, fill=(255, 0, 0, 128))
             image2 = Image.new('RGBA', (self.x2 - self.x1 - 2, self.y2 - self.y1 - 2), (0, 0, 0, 10))
             image2 = ImageOps.expand(image2, border=2, fill=(0, 0, 0, 50))
 
             draw = ImageDraw.Draw(image)
             draw2 = ImageDraw.Draw(image2)
-            draw3 = ImageDraw.Draw(self.pilimage)
             textfont = ImageFont.truetype('GOTHIC.TTF', size=15)
             lines = [self.code, self.type]
             iwidth, iheight = x2 - x1 - 1, y2 - y1 - 1
@@ -219,8 +193,6 @@ class myButton:
                           fill=(0, 0, 0), font=textfont)
                 draw2.text(((iwidth - textw) / 2, (iheight - (texth * len(lines))) / 2 + (i * texth)), line,
                            fill=(0, 0, 0, 100), font=textfont)
-                draw3.text(((iwidth - textw) / 2, (iheight - (texth * len(lines))) / 2 + (i * texth)), line,
-                           fill=(0, 0, 0, 200), font=textfont)
 
             self.image = ImageTk.PhotoImage(image)
             self.greyimage = ImageTk.PhotoImage(image2)
@@ -230,7 +202,6 @@ class myButton:
             self.cbutton = c.create_rectangle(x1, y1, x2, y2, **kwargs)
 
     def callback(self, id):
-        # print(id)
         if self in final:
             for sibling in self.siblings:
                 final.remove(sibling)
@@ -263,44 +234,35 @@ weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday']
 originx, originy = 76, 30
 cellw, cellh = 187, 28
 
-invalid_courses, futures = [], []
-
-# with concurrent.futures.ThreadPoolExecutor() as executor:
-#     futures = [(param, executor.submit(getCourseData, ret[0], param)) for param in ret[1]]
-# for course, tempdata in [(f[0], f[1].result()) for f in futures]:
-
+""" Simultaneously scrape all course data """
 with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures = [(course, session.get_course_data(course)) for course in courses]
+    futures = [(course, executor.submit(session.get_course_data, course)) for course in courses]
 
-for course, coursedata in futures:
+""" Create tab and buttons for each course """
+for course_code, future in futures:
     c = Canvas(notebook, width=width, height=height, bd=0, highlightthickness=0, relief='ridge')
     c.focus_set()
     c.pack(fill=BOTH, expand=True)
     c.create_image(0, 0, image=background_image, anchor="nw", tags='bg')
     tabs.append(c)
-    notebook.add(tabs[-1], text=course)
+    notebook.add(c, text=course_code)
 
-    for section in coursedata:  # for each section
+    for section in future.result():  # for each section
         siblings = []
         days = [day for day in weekdays if section['meetingsFaculty'][0]['meetingTime'][day.lower()]]
         for day in days:
-            format = '%H%M'
-            top = datetime.strptime('0700', format)
-            start = datetime.strptime(section['meetingsFaculty'][0]['meetingTime']['beginTime'], format)
-            end = datetime.strptime(section['meetingsFaculty'][0]['meetingTime']['endTime'], format)
+            time_format = '%H%M'
+            top = datetime.strptime('0700', time_format)  # first time in schedule image
+            start = datetime.strptime(section['meetingsFaculty'][0]['meetingTime']['beginTime'], time_format)
+            end = datetime.strptime(section['meetingsFaculty'][0]['meetingTime']['endTime'], time_format)
             length = (end - start).seconds / 60
 
-            adjh = int(length / 60 * (cellh * 2))  # adjusted pixel height
+            adjh = int(length / 60 * (cellh * 2))  # scaled pixel height
             x1 = originx + weekdays.index(day) * cellw
             y1 = originy + int((start - top).seconds / 1800) * cellh
             x2 = originx + weekdays.index(day) * cellw + cellw
             y2 = originy + int((start - top).seconds / 1800) * cellh + adjh
-            data = []
-            for i, key in enumerate(section):
-                if i > 15:
-                    break
-                data.append(section[key])
-            buttons.append(myButton(days, 'temp', data))
+            buttons.append(course_button(section))
             siblings.append(buttons[-1])
 
             typecolor = 'black'
@@ -312,104 +274,8 @@ for course, coursedata in futures:
             elif 'Laboratory' in courseType or 'Studio' in courseType:
                 typecolor = 'Yellow'
             buttons[-1].create_rectangle(x1, y1, x2, y2, fill=typecolor, alpha=.8)
-
         for b in siblings:
             b.siblings = siblings
 
-
-"""
-coursecopy = ret[1][:]
-for course in ret[1]:
-    if len(course) < 3:
-        continue
-    try:
-        futures.append(pickle.load(open(f"./pickles/{course}.p", "rb")))
-        coursecopy.remove(course)
-        print('pickle loaded')
-    except:
-        continue
-
-with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures2 = [(param, executor.submit(getCourseData, ret[0], param)) for param in coursecopy]
-
-for course, futuredata in futures2:
-    try:
-        result = futuredata.result()
-        pickle.dump((course, result), open(f"./pickles/{course}.p", "wb"))
-        futures.append((course, result))
-        print('pickle saved')
-    except Exception as e:
-        invalid_courses.append(e)
-        continue
-"""
-
-# """
-# for course in ret[1]:
-#     if len(course) < 3:
-#         continue
-#
-#     try:
-#         tempdata = pickle.load(open(f"./{course}.p", "rb"))
-#         print('pickle loaded')
-#     except:
-#         try:
-#             tempdata = getCourseData(ret[0], course)
-#             pickle.dump(tempdata, open(f"./{course}.p", "wb"))
-#             print('pickle saved')
-#         except Exception as e:
-#             invalid_courses.append(e)
-#             continue
-# """
-"""
-for course, tempdata in futures:
-    c = Canvas(notebook, width=width, height=height, bd=0, highlightthickness=0, relief='ridge')
-    c.focus_set()
-    c.pack(fill=BOTH, expand=True)
-    c.create_image(0, 0, image=background_image, anchor="nw", tags='bg')
-    tabs.append(c)
-    notebook.add(tabs[-1], text=course)
-
-
-
-    for days, ctime, data, term in tempdata:  # for each section
-        global gterm
-        gterm = term
-        siblings = []
-        for day in days:
-            cstart, cend = ctime.split(' - ')
-            format = '%I:%M %p'
-            top = datetime.strptime('07:00 AM', format)
-            start = datetime.strptime(cstart, format)
-            end = datetime.strptime(cend, format)
-            length = (end - start).seconds / 60
-
-            adjh = int(length / 60 * (cellh * 2))  # adjusted pixel height
-            x1 = originx + weekdays.index(day) * cellw
-            y1 = originy + int((start - top).seconds / 1800) * cellh
-            x2 = originx + weekdays.index(day) * cellw + cellw
-            y2 = originy + int((start - top).seconds / 1800) * cellh + adjh
-            buttons.append(myButton(days, ctime, data))
-            # if len(days) > 1:
-            siblings.append(buttons[-1])
-
-            typecolor = 'black'
-            if 'Lecture' in data[5]:
-                typecolor = 'Red'
-            elif 'Discussion' in data[5]:
-                typecolor = 'Blue'
-            elif 'Laboratory' in data[5] or 'Studio' in data[5]:
-                typecolor = 'Yellow'
-            buttons[-1].create_rectangle(x1, y1, x2, y2, fill=typecolor, alpha=.8)
-
-        for b in siblings:
-            b.siblings = siblings
-        # print(days, len(siblings))
-
-# if invalid_courses:
-#     error_msg = ''
-#     for error in invalid_courses:
-#         error_msg += str(error) + '\n'
-#     messagebox.showwarning(title='Course not found', message=error_msg)
-"""
-
+root.deiconify()
 root.mainloop()
