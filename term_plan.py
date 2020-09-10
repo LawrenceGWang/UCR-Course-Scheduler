@@ -1,131 +1,107 @@
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.ui import WebDriverWait, Select
-from selenium.webdriver.support.expected_conditions import presence_of_element_located, \
-    frame_to_be_available_and_switch_to_it, element_to_be_clickable
-from tkinter import Tk, PhotoImage, Label, filedialog
-import time
+import json
 import pickle
+import sys
+from tkinter import filedialog
 
-root = Tk()
-root.withdraw()
+import requests
+from lxml import html
 
-try:
-    credentials = pickle.load(open("./credentials.p", "rb"))
-except:
-    credentials = [input('Enter RWeb Username: '), input('Enter RWeb Password: ')]
-    if input('Do you want to save you credentials? (yes/no): ').lower == 'yes':
-        pickle.dump(credentials, open("credentials.p", "wb"))
+if __name__ == '__main__':
+    if len(sys.argv) != 2:
+        sys.exit('Usage:\tterm_plan.py [<schedule_path> / manual]'
+                 '\n\t(Use generated schedule or manually input term and courses)')
 
-try:
-    courses = pickle.load(open(filedialog.askopenfilename(initialdir="./schedules/", title="Open schedule",
-                                                          filetypes=(("all files", "*.*"),)), "rb"))
-    term = courses.pop('Term')
-except:
-    exit('Invalid schedule file! Run gui.py to create a schedule.')
+    if 'manual' in sys.argv[1]:
+        courselist = []
+        term_txt = input('Enter course (e.g. Fall 2020): ').split()
+        semester_dict = {'winter': '10', 'spring': '20', 'summer': '30', 'fall': '40'}
+        term = term_txt[1] + semester_dict[term_txt[0].lower()]
+        print('Type q to quit')
+        while True:
+            course_in = input('Enter a CRN: ')
+            if 'q' in course_in:
+                break
+            elif course_in.isnumeric():
+                courselist.append(course_in)
+            else:
+                print('Invalid CRN')
+    else:
+        try:
+            courses = pickle.load(open(filedialog.askopenfilename(initialdir="./schedules/", title="Open schedule",
+                                                                  filetypes=(("All Files", "*.*"),)), "rb"))
+            term = courses.pop('Term')
+            courselist = set([crn for key in courses for crn in courses[key]])
+            print(courselist)
+        except(FileNotFoundError, TypeError):
+            sys.exit('Invalid schedule file! Run gui.py to create a schedule.')
 
-url = 'https://auth.ucr.edu/cas/login'
-chrome_options = Options()
-chrome_options.add_argument('--headless')
-chrome_options.add_argument(f'--window-size={root.winfo_screenwidth()},{root.winfo_screenheight()}')
-
-driver = webdriver.Chrome('./chromedriver.exe', options=chrome_options)
-wait = WebDriverWait(driver, 5)
-driver.get(url)
-print('ChromeDriver started')
-
-""" Login """
-WebDriverWait(driver, 3).until(presence_of_element_located((By.XPATH, '//input[@class="form-control required"]')))
-login = driver.find_elements(By.XPATH, '//input[@class="form-control required"]')
-login[0].send_keys(credentials[0])  # Username
-login[1].send_keys(credentials[1])  # Password
-driver.find_element(By.XPATH, '//button[@name="submit"]').click()  # Sign in
-try:
-    WebDriverWait(driver, 2).until(frame_to_be_available_and_switch_to_it((By.ID, "duo_iframe")))
-    driver.find_element(By.XPATH, '//span[@class="label factor-label"]').click()
-    select_device = driver.find_elements(By.XPATH, '//select[@name="device"]/option')
-    devices = [device.text for device in select_device]
-    print(f'Select a device (0 - {len(devices)}):')
-    for i, device in enumerate(devices):
-        print(f'{i}) {device}')
-    driver.find_element(By.XPATH, '//select[@name="device"]/option[text()="' + devices[int(input())] + '"]').click()
-    time.sleep(1)
-    driver.find_element(By.XPATH, '//button[@id="message"]').click()  # Text me new codes
-    driver.find_element(By.XPATH, '//input[@name="passcode"]').send_keys(input('Enter 2FA code: '))
-    driver.find_element(By.XPATH, '//button[@id="passcode"]').click()
-    driver.switch_to.default_content()
-    time.sleep(2)
-except Exception as e:
-    pass
-print(f'Login successful')
-
-""" Term Plan """
-""" Old code to select a term
-url = 'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/registration/registration'
-driver.get(url)
-wait.until(presence_of_element_located((By.XPATH, '//a[@id="planningLink"]')))
-driver.find_element(By.XPATH, '//a[@id="planningLink"]').click()
-driver.find_element(By.ID, 's2id_txt_term').click()
-driver.find_element(By.XPATH, '//input[@id="s2id_autogen1_search"]').send_keys(term)
-time.sleep(1)
-driver.find_element(By.XPATH, '//input[@id="s2id_autogen1_search"]').send_keys(Keys.ENTER)
-wait.until(presence_of_element_located((By.ID, 'term-go')))
-driver.find_element(By.ID, 'term-go').click()
-"""
-driver.get(f'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/term/search?mode=plan&dataType=json'
-           f'&term={term}&studyPath=&studyPathText=&startDatepicker=&endDatepicker=')
-
-""" Old code to create a new term plan
-driver.get('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/selectPlan')
-wait.until(presence_of_element_located((By.XPATH, '//button[@id="createPlan"]')))
-driver.find_element(By.XPATH, '//button[@id="createPlan"]').click()
-"""
-driver.get('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/plan')
-
-driver.find_element(By.ID, 'search-go').click()
-for course in courses:
-    print(f'Adding course {course} to term plan')
-    wait.until(element_to_be_clickable((By.XPATH, '//button[@id="search-again-button"]')))
-    time.sleep(1)
-    driver.find_element(By.XPATH, '//button[@id="search-again-button"]').click()
-    wait.until(element_to_be_clickable((By.XPATH, '//ul[@class="select2-choices"]')))
-    # time.sleep(1)
-    driver.find_element(By.XPATH, '//ul[@class="select2-choices"]').click()
-    driver.find_element(By.ID, 's2id_autogen1').send_keys(Keys.BACKSPACE + Keys.BACKSPACE + course)
-    time.sleep(1)
-    driver.find_element(By.ID, 's2id_autogen1').send_keys(Keys.ENTER)
-    wait.until(element_to_be_clickable((By.ID, 'search-go')))
-    driver.find_element(By.ID, 'search-go').click()
-    wait.until(element_to_be_clickable((By.XPATH, '//button[@class="form-button search-section-button"]')))
-    # time.sleep(1)
-    driver.save_screenshot("screenshot.png")
-    driver.find_element(By.XPATH, '//button[@class="form-button search-section-button"]').click()
-    wait.until(element_to_be_clickable((By.CLASS_NAME, 'page-size-select')))
-    Select(driver.find_element(By.CLASS_NAME, 'page-size-select')).select_by_visible_text('50')
-    for section in set(courses[course]):
-        time.sleep(1)
-        driver.find_element(By.XPATH, '//button[@id="' + f'addSection{term}{section}' + '"]').click()
-    time.sleep(1)
-    driver.find_element(By.XPATH, '//button[@id="saveButton"]').click()
     try:
-        WebDriverWait(driver, 2).until(
-            element_to_be_clickable((By.XPATH, '//div[@class="ui-dialog-buttonset"]/button[2]')))
-        driver.find_element(By.XPATH, '//div[@class="ui-dialog-buttonset"]/button[2]').click()
-    except:
-        pass
-    wait.until(element_to_be_clickable((By.XPATH, '//a[@class="form-button return-course-button"]')))
-    driver.find_element(By.XPATH, '//a[@class="form-button return-course-button"]').click()
-driver.find_element(By.XPATH, '//div[@class="btnToggleNorth ui-toggler-open ui-toggler"]').click()
-driver.save_screenshot("./screenshot.png")
-driver.close()
+        credentials = pickle.load(open("credentials.p", "rb"))
+    except FileNotFoundError:
+        credentials = [input('Enter RWeb Username: '), input('Enter RWeb Password: ')]
+        if 'yes' in input('Do you want to save your credentials? (yes/no): ').lower():
+            pickle.dump(credentials, open("credentials.p", "wb"))
+        print('Credentials saved!')
 
-image = PhotoImage(file='./screenshot.png')
-root.geometry(f'{root.winfo_screenwidth()}x{root.winfo_screenheight()}')
-label = Label(root, compound="top", image=image)
-label.pack()
-root.deiconify()
-root.mainloop()
+    plan_name = 'Generated Plan'
+    new_name = input('Set term plan name: ')
+    if new_name:
+        plan_name = new_name
 
-sys.exit()
+    s = requests.Session()
+
+    url = 'https://auth.ucr.edu/cas/login'
+    tree = html.fromstring(s.get(url).content)
+    auth = tree.xpath('//input[@name="execution"]/@value')
+    login_data = {
+        'username': credentials[0],
+        'password': credentials[1],
+        'execution': auth,
+        '_eventId': 'submit',
+        'geolocation': None
+    }
+    if 'have successfully logged' not in s.post(url, login_data).text:
+        sys.exit('Login failed!')
+    print('Login successful!')
+
+    r = s.post(
+        f'https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/term/search?mode=plan&dataType=json'
+        f'&term={term}&studyPath=&studyPathText=&startDatepicker=&endDatepicker=')
+
+    s.post('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/plan')
+
+    models = []
+    for crn in courselist:
+        addData = {
+            'dataType': 'json',
+            'term': term,
+            'courseReferenceNumber': crn,
+            'section': 'section'
+        }
+        try:
+            models.append(s.post('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/addPlanItem',
+                                 data=addData).json()['model'])
+        except:
+            pass
+    models.append({"headerDescription": plan_name, "headerComment": None})
+
+    submitData = {
+        "create": models,
+        "update": [],
+        "destroy": []
+    }
+    response = s.post('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/submitPlan/batch',
+                      data=json.dumps(submitData))
+
+    r = s.post('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/getPlanEvents')
+    confirm = r.json()
+    if not confirm:
+        sys.exit('Error creating term plan! Check the number of plans you have on RWeb!')
+    print('Term plan created successfully!')
+    for crn, title in set([(class_dict["crn"], class_dict["title"]) for class_dict in confirm]):
+        print(f'{crn}\t{title}')
+
+    if 'yes' in input('Set plan as preferred term plan? (yes/no): ').lower():
+        s.post('https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/selectPlan')
+        s.post("https://registrationssb.ucr.edu/StudentRegistrationSsb/ssb/plan/makePreferred"
+               f"?dataType=json&preferred={response.json()['data']['planHeader']['sequenceNumber']}")
