@@ -28,7 +28,6 @@ fimage = Image.open('./blank_schedule.png')
 fdraw = ImageDraw.Draw(fimage, 'RGBA')
 fimagetemp = None
 
-
 session = rweb_session()
 courses, tabs, buttons = [], [], []
 
@@ -37,70 +36,59 @@ class get_term_courses:
     def __init__(self):
         self.master = Toplevel(root)
         self.master.title('Input Term and Courses')
-        self.master.geometry("390x335")
         self.master.resizable(False, False)
+        self.master.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.master.withdraw()
 
         fontStyle = tkFont.Font(family="Century Gothic", size=15)
-        self.frame = Frame(self.master)
-        self.frame.pack()
+        frame = Frame(self.master)
+        frame.pack(anchor=N, fill=BOTH, expand=True)
 
         """ Get term of classes """
-        default_term_text = session.term_codes[0]['description']
-        Label(self.frame, text="Course Term\n(Leave blank\nfor latest)", font=fontStyle).grid(row=1, padx=(10, 10))
-        # self.term_input = Entry(self.frame, width=10, font=fontStyle, fg='grey')
-        # self.term_input.insert(END, default_term_text)
-        # self.term_input.grid(row=1, column=1, sticky='ew', padx=(10, 10))
-        # self.term_input.bind("<FocusIn>", self.focus_in)
-        # self.term_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_term_text))
+        Label(frame, text="Term", font=fontStyle).grid(row=1, padx=15, pady=10)
         options = [key for key in session.rev_dict]
         self.term_input = StringVar(root)
         self.term_input.set(options[0])
-        term_dropdown = OptionMenu(self.frame, self.term_input, *options)
-        term_dropdown.config(width=20)
-        term_dropdown.grid(row=1, column=1, sticky='ew')
+        term_dropdown = OptionMenu(frame, self.term_input, *options)
+        term_dropdown.config(width=20, anchor='w')
+        term_dropdown.grid(row=1, column=1, padx=10, pady=10)
 
         """ Get list of courses to scrape """
         default_course_text = 'AHS007\nPHYS040A\nHIST010\nECON002\nCS010A'
-        Label(self.frame, text="Course Codes\n(One per line)", font=fontStyle).grid(row=3)
-        self.course_input = Text(self.frame, width=10, height=5, font=fontStyle, fg='grey')
+        Label(frame, text="Courses", font=fontStyle).grid(row=3, padx=15, pady=10)
+        self.course_input = Text(frame, width=15, height=5, font=fontStyle, fg='grey')
+        self.course_input.grid(row=3, column=1, padx=10, pady=10)
         self.course_input.insert(END, default_course_text)
-        self.course_input.grid(row=3, column=1, sticky="nsew")
         self.course_input.bind("<FocusIn>", self.focus_in)
-        self.course_input.bind("<FocusOut>", lambda event: self.focus_out(event, default_course_text))
 
-        submit = Button(self.frame, text='Button', font=fontStyle, command=self.submitCmd)
-        submit.grid(row=5, column=0, rowspan=2, columnspan=2, sticky='nsew')
+        submit = Button(frame, text='Confirm', font=fontStyle, command=self.submitCmd)
+        submit.grid(row=5, column=0, rowspan=2, columnspan=2, sticky='nsew', padx=10)
 
-        col_count, row_count = self.frame.grid_size()
-        for col in range(col_count):
-            self.frame.grid_columnconfigure(col, minsize=10)
-        for row in range(row_count):
-            self.frame.grid_rowconfigure(row, minsize=30)
-        self.frame.grid_rowconfigure(0, minsize=10)
+        self.master.update()
+        popupWidth, popupHeight = self.master.winfo_width(), self.master.winfo_width() - 65
+        popupPosHor = int(root.winfo_screenwidth() / 2 - popupWidth / 2)
+        popupPosVert = int(root.winfo_screenheight() / 2 - popupHeight / 2)
+        self.master.geometry(f"{popupWidth}x{popupHeight}+{popupPosHor}+{popupPosVert - 50}")
+        self.master.deiconify()
 
     def focus_in(self, event):
         if event.widget.cget('fg') == 'grey':
-            try:
-                event.widget.delete(0, END)
-            except:
-                event.widget.delete('1.0', END)
+            event.widget.delete('1.0', END)
             event.widget.config(fg='black')
 
-    def focus_out(self, event, default):
-        try:
-            text = event.widget.get("1.0", "end-1c")
-        except:
-            text = event.widget.get()
-        if not text:
-            event.widget.config(fg='grey')
-            event.widget.insert(END, default)
+    def on_close(self):
+        if messagebox.askokcancel("Quit", "Do you want to quit?"):
+            self.master.destroy()
+            root.geometry('0x0')
+            root.quit()
+            sys.exit()
 
     def submitCmd(self):
         session.init_term(self.term_input.get())
         for tempc in self.course_input.get('1.0', END).split():
             if not session.is_valid_course(tempc):
                 messagebox.showwarning(title='Course not found',
-                                       message=f'Error! Invalid course: {tempc}\nDid you mean: \n'
+                                       message=f'Error! Invalid course: {tempc}\nDid you mean:\n'
                                                f'{[code for code in session.course_codes if tempc.upper() in code]}?')
                 break
         else:
@@ -113,7 +101,6 @@ class get_term_courses:
 popup = get_term_courses()
 root.wait_window(popup.master)
 
-
 show_final = False
 def toggle_show_final():
     for tab in tabs:
@@ -125,13 +112,15 @@ def toggle_show_final():
 
 
 def key_press(event):
-    if event.char == 's' and final:
+    key = event.char
+    if key == 's' and final:
         pick = {'Term': final[0].data['term']}
         for f in final:
             pick.update({f.code: []})
         for f in final:
             pick.update({f.code: pick[f.code] + [f.data['courseReferenceNumber']]})
-        pickle.dump(pick, open(filedialog.asksaveasfilename(initialdir="./schedules/", title="Save schedule", filetypes=(("all files", "*.*"),)), "wb"))
+        pickle.dump(pick, open(filedialog.asksaveasfilename(initialdir="./schedules/", title="Save schedule",
+                                                            filetypes=(("All Files", "*.*"),)), "wb"))
         messagebox.showinfo(title='Schedule saved!', message='Schedule saved!')
     elif event.char == 'u':
         global show_final
@@ -152,11 +141,13 @@ def key_press(event):
                 elif b.state == 'hidden':
                     b.state = 'disabled'
                 b.tab.itemconfig(b.cbutton, state=b.state)
-            elif event.char == 'i' and b.type == 'Lecture':
+            elif event.char == 'l' and not b.data['seatsAvailable']:
                 b.toggle()
-            elif event.char == 'o' and b.type == 'Discussion':
+            elif event.char == 'i' and b.type == 'Lecture' and b.data['seatsAvailable']:
                 b.toggle()
-            elif event.char == 'p' and b.type == 'Laboratory' or b.type == 'Studio':
+            elif event.char == 'o' and b.type == 'Discussion' and b.data['seatsAvailable']:
+                b.toggle()
+            elif event.char == 'p' and (b.type == 'Laboratory' or b.type == 'Studio') and b.data['seatsAvailable']:
                 b.toggle()
 
 
@@ -201,6 +192,7 @@ class course_button:
             self.image = ImageTk.PhotoImage(image)
             self.greyimage = ImageTk.PhotoImage(image2)
             self.cbutton = self.tab.create_image(x1, y1, image=self.image, disabledimage=self.greyimage, anchor='nw')
+            self.tab.itemconfig(self.cbutton, state=self.state)
             self.tab.tag_bind(self.cbutton, '<Button-1>', lambda event, id=self.cbutton: self.callback(id))
         else:
             self.cbutton = c.create_rectangle(x1, y1, x2, y2, **kwargs)
@@ -271,7 +263,10 @@ for course_code, future in futures:
 
             typecolor = 'black'
             courseType = section['scheduleTypeDescription']
-            if 'Lecture' in courseType:
+            if not section['seatsAvailable']:
+                typecolor = 'Green'
+                buttons[-1].state = 'hidden'
+            elif 'Lecture' in courseType:
                 typecolor = 'Red'
             elif 'Discussion' in courseType:
                 typecolor = 'Blue'
@@ -282,4 +277,13 @@ for course_code, future in futures:
             b.siblings = siblings
 
 root.deiconify()
+messagebox.showinfo(title='Keyboard Shortcuts', message='Keyboard Shortcuts:\n'
+                                                        'S:\tSave current schedule\n'
+                                                        'U:\tToggle show final schedule on other class tabs\n'
+                                                        'R:\tReset final schedule and all tabs\n'
+                                                        'H:\tToggle show disabled sections\n'
+                                                        'L:\tToggle show full sections\n'
+                                                        'I:\tToggle show Lecture sections\n'
+                                                        'O:\tToggle show Discussion sections\n'
+                                                        'P:\tToggle show Lab/Studio sections')
 root.mainloop()
